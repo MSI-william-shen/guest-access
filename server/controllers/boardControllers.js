@@ -1,9 +1,8 @@
 const axios = require('axios');
 
-// Securely pull your token from the .env file
-const MONDAY_TOKEN = process.env.MONDAY_API_TOKEN;
 const MONDAY_API_URL = 'https://api.monday.com/v2';
 
+// Helper function to handle the actual API calls to monday.com cleanly
 const executeMondayQuery = async (query, variables = {}) => {
     try {
         const response = await axios.post(
@@ -12,42 +11,34 @@ const executeMondayQuery = async (query, variables = {}) => {
             {
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': MONDAY_TOKEN,
+                    'Authorization': process.env.MONDAY_API_TOKEN,
                     'API-Version': '2024-01'
                 }
             }
         );
 
-        // Catch Error
         if (response.data.errors) {
-            console.error('GraphQL Error:', response.data.errors);
             throw new Error(response.data.errors[0].message);
         }
 
         return response.data.data;
     } catch (error) {
-        throw new Error('Failed to communicate with monday.com');
+        console.error("Monday API Error:", error.message);
+        throw error;
     }
 };
 
-// Fetch Workspaces & Boards
+// 1. Fetch workspaces and boards
 exports.getWorkspacesAndBoards = async (req, res) => {
     const query = `
         query {
-            workspaces {
-                id
-                name
-            }
+            workspaces { id name }
             boards(limit: 50) {
-                id
-                name
-                workspace {
-                    id
-                }
+                id name
+                workspace { id }
             }
         }
     `;
-
     try {
         const data = await executeMondayQuery(query);
         res.status(200).json(data);
@@ -56,7 +47,7 @@ exports.getWorkspacesAndBoards = async (req, res) => {
     }
 };
 
-// Fetch Board Layout and Items
+// 2. Fetch Board Layout (Columns, Groups, and Items)
 exports.getBoardLayout = async (req, res) => {
     const { boardId } = req.params;
     
@@ -64,22 +55,13 @@ exports.getBoardLayout = async (req, res) => {
         query getBoardData($boardId: [ID!]) {
             boards(ids: $boardId) {
                 name
-                columns {
-                    id
-                    title
-                    type
-                }
+                columns { id title type }
                 groups {
-                    id
-                    title
+                    id title
                     items_page(limit: 100) {
                         items {
-                            id
-                            name
-                            column_values {
-                                id
-                                text
-                            }
+                            id name
+                            column_values { id text }
                         }
                     }
                 }
@@ -88,9 +70,50 @@ exports.getBoardLayout = async (req, res) => {
     `;
 
     try {
-        // Pass the boardId from the URL parameters as a variable
         const data = await executeMondayQuery(query, { boardId: [boardId] });
-        res.status(200).json(data.boards[0]); // Return just the targeted board
+        
+        if (!data.boards || data.boards.length === 0) {
+            return res.status(404).json({ error: 'Board not found' });
+        }
+        
+        res.status(200).json(data.boards[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// 3. Fetch specific Board metadata by ID
+exports.getBoardById = async (req, res) => {
+    const { boardId } = req.params;
+    const query = `
+        query getBoardData($boardId: [ID!]) {
+            boards(ids: $boardId) {
+                id name description state
+                workspace { id name }
+            }
+        }
+    `;
+    try {
+        const data = await executeMondayQuery(query, { boardId: [boardId] });
+        res.status(200).json(data.boards[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// 4. Fetch a specific Workspace by ID
+exports.getWorkspaceById = async (req, res) => {
+    const { workspaceId } = req.params;
+    const query = `
+        query getWorkspaceData($workspaceId: [ID!]) {
+            workspaces(ids: $workspaceId) {
+                id name description state
+            }
+        }
+    `;
+    try {
+        const data = await executeMondayQuery(query, { workspaceId: [workspaceId] });
+        res.status(200).json(data.workspaces[0]);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

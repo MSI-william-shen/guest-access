@@ -1,14 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { fetchBoardLayout } from '../api';
+
+// AG Grid Imports
+import { AgGridReact } from 'ag-grid-react';
+import 'ag-grid-community/styles/ag-grid.css'; // Core grid styling
+import 'ag-grid-community/styles/ag-theme-quartz.css'; // Modern theme
 
 function BoardView({ boardId }) {
     const [board, setBoard] = useState(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Fetch the data when the component mounts or boardId changes
         fetchBoardLayout(boardId)
             .then(data => {
+                console.log("Data from backend:", data);
                 setBoard(data);
                 setLoading(false);
             })
@@ -18,60 +23,101 @@ function BoardView({ boardId }) {
             });
     }, [boardId]);
 
+    // Transform monday.com data into AG Grid format
+    const { rowData, colDefs } = useMemo(() => {
+        if (!board || !board.columns) return { rowData: [], colDefs: [] };
+
+        // 1. Define Columns
+        const columns = [
+            { 
+                field: 'group', 
+                headerName: 'Group', 
+                width: 150,
+                // Keeps groups organized nicely
+                sort: 'asc' 
+            },
+            { 
+                field: 'name', 
+                headerName: 'Item Name', 
+                pinned: 'left', // Pins the name to the left when scrolling horizontally
+                width: 250
+            }
+        ];
+
+        // Dynamically add the rest of the monday.com columns
+        board.columns.forEach(col => {
+            columns.push({
+                field: col.id, // We use the unique column ID as the data key
+                headerName: col.title,
+                minWidth: 120,
+                flex: 1 // Allows columns to stretch and fill empty space
+            });
+        });
+
+        // 2. Define Rows (Flattening the nested groups/items)
+        const rows = [];
+        board.groups.forEach(group => {
+            group.items_page.items.forEach(item => {
+                // Base row object
+                const row = {
+                    id: item.id,
+                    group: group.title,
+                    name: item.name
+                };
+
+                // Map dynamic column values to this row
+                item.column_values.forEach(colVal => {
+                    row[colVal.id] = colVal.text || '-'; // Fallback for empty cells
+                });
+
+                rows.push(row);
+            });
+        });
+
+        return { rowData: rows, colDefs: columns };
+    }, [board]);
+
+    // AG Grid default column settings (applies to all columns)
+    const defaultColDef = useMemo(() => {
+        return {
+            sortable: true,
+            filter: true,
+            resizable: true,
+        };
+    }, []);
+
     if (loading) return <div style={{ padding: '20px' }}>Loading board layout...</div>;
-    if (!board) return <div>Failed to load board.</div>;
+    
+    if (!board || !board.columns) {
+        return (
+            <div style={{ padding: '20px', color: 'red' }}>
+                Failed to load board. Open your browser console (F12) to see what went wrong.
+            </div>
+        );
+    }
 
     return (
-        <div style={{ padding: '20px', fontFamily: 'sans-serif' }}>
-            <h2>{board.name}</h2>
+        <div style={{ padding: '20px', fontFamily: 'sans-serif', height: '100vh', display: 'flex', flexDirection: 'column' }}>
+            <h2 style={{ marginBottom: '15px' }}>{board.name}</h2>
             
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                {/* 1. RENDER THE COLUMNS (HEADERS) */}
-                <thead style={{ backgroundColor: '#f5f6f8', borderBottom: '2px solid #e6e9ef' }}>
-                    <tr>
-                        <th style={{ padding: '10px' }}>Item Name</th>
-                        {board.columns.map(column => (
-                            <th key={column.id} style={{ padding: '10px' }}>
-                                {column.title}
-                            </th>
-                        ))}
-                    </tr>
-                </thead>
-
-                {/* 2. RENDER THE GROUPS AND ITEMS */}
-                {board.groups.map(group => (
-                    <tbody key={group.id}>
-                        {/* Group Title Row */}
-                        <tr style={{ backgroundColor: '#eef2fc' }}>
-                            <td 
-                                colSpan={board.columns.length + 1} 
-                                style={{ padding: '10px', fontWeight: 'bold', color: '#323338' }}
-                            >
-                                {group.title}
-                            </td>
-                        </tr>
-
-                        {/* Items within the Group */}
-                        {group.items_page.items.map(item => (
-                            <tr 
-                                key={item.id} 
-                                style={{ borderBottom: '1px solid #e6e9ef', cursor: 'pointer' }}
-                                hover="true"
-                            >
-                                {/* The primary item name */}
-                                <td style={{ padding: '10px' }}>{item.name}</td>
-                                
-                                {/* The dynamic column values */}
-                                {item.column_values.map(colVal => (
-                                    <td key={colVal.id} style={{ padding: '10px' }}>
-                                        {colVal.text || '-'}
-                                    </td>
-                                ))}
-                            </tr>
-                        ))}
-                    </tbody>
-                ))}
-            </table>
+            {/* 
+              AG Grid requires a wrapper div with a specific height and theme class. 
+              We use flex-grow to ensure it takes up the remainder of the screen.
+            */}
+            <div 
+                className="ag-theme-quartz" 
+                style={{ flexGrow: 1, width: '100%', minHeight: '500px' }}
+            >
+                <AgGridReact
+                    rowData={rowData}
+                    columnDefs={colDefs}
+                    defaultColDef={defaultColDef}
+                    rowSelection="single" // Allows clicking a row (useful for opening comments later)
+                    animateRows={true}
+                    pagination={true}
+                    paginationPageSize={20}
+                />
+            </div>
         </div>
     );
 }
