@@ -1,0 +1,9 @@
+# Ignores node_modules in the root and ALL nested subfolders
+**/node_modules/
+
+# Ignores .env files in the root and ALL nested subfolders
+**/.env
+
+# Optional: Ignore OS system files everywhere
+**/.DS_Store
+**/Thumbs.db
