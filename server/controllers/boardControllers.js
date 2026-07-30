@@ -118,3 +118,64 @@ exports.getWorkspaceById = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+// 5. Fetch Updates (Comments) for a specific item
+exports.getItemUpdates = async (req, res) => {
+    const { itemId } = req.params;
+    
+   // We added the `replies` block inside `updates`
+    const query = `
+        query getItemUpdates($itemId: [ID!]) {
+            items(ids: $itemId) {
+                updates {
+                    id
+                    body
+                    created_at
+                    creator { name photo_thumb_small }
+                    assets { id name public_url }
+                    replies {
+                        id
+                        body
+                        created_at
+                        creator { name photo_thumb_small }
+                    }
+                }
+            }
+        }
+    `;
+
+    try {
+        const data = await executeMondayQuery(query, { itemId: [itemId] });
+        if (!data.items || data.items.length === 0) {
+            return res.status(404).json({ error: 'Item not found' });
+        }
+        res.status(200).json(data.items[0].updates);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// 6. Post a new Text Update to a specific item
+exports.createItemUpdate = async (req, res) => {
+    const { itemId } = req.params;
+    const { updateText } = req.body;
+    
+    const query = `
+        mutation createUpdate($itemId: ID!, $body: String!) {
+            create_update(item_id: $itemId, body: $body) {
+                id
+                body
+            }
+        }
+    `;
+
+    try {
+        const data = await executeMondayQuery(query, { 
+            itemId: parseInt(itemId), 
+            body: updateText 
+        });
+        res.status(200).json(data.create_update);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
