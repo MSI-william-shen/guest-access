@@ -97,3 +97,60 @@ exports.getBoardLayout = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
+const { executeMondayQuery } = require('./boardController'); // Re-use the helper
+
+// Fetch Comments (Updates) for an Item
+exports.getItemComments = async (req, res) => {
+    const { itemId } = req.params;
+
+    const query = `
+        query getUpdates($itemId: [ID!]) {
+            items(ids: $itemId) {
+                updates {
+                    id
+                    body
+                    created_at
+                    creator {
+                        name
+                    }
+                }
+            }
+        }
+    `;
+
+    try {
+        const data = await executeMondayQuery(query, { itemId: [itemId] });
+        res.status(200).json(data.items[0].updates);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Write a Comment to an Item
+exports.postComment = async (req, res) => {
+    const { itemId } = req.params;
+    const { text, guestName } = req.body; // Grab the text and who wrote it from the frontend
+
+    // Format the comment using basic HTML so it looks nice in monday.com
+    const formattedComment = `<b>[External Guest: ${guestName}]</b><br/>${text}`;
+
+    const mutation = `
+        mutation createComment($itemId: ID!, $body: String!) {
+            create_update(item_id: $itemId, body: $body) {
+                id
+                body
+            }
+        }
+    `;
+
+    try {
+        const data = await executeMondayQuery(mutation, { 
+            itemId: itemId, 
+            body: formattedComment 
+        });
+        res.status(200).json(data.create_update);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};

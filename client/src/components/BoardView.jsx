@@ -3,8 +3,8 @@ import { fetchBoardLayout } from '../api';
 
 // AG Grid Imports
 import { AgGridReact } from 'ag-grid-react';
-import 'ag-grid-community/styles/ag-grid.css'; // Core grid styling
-import 'ag-grid-community/styles/ag-theme-quartz.css'; // Modern theme
+import 'ag-grid-community/styles/ag-grid.css';
+import 'ag-grid-community/styles/ag-theme-quartz.css';
 
 function BoardView({ boardId }) {
     const [board, setBoard] = useState(null);
@@ -13,7 +13,6 @@ function BoardView({ boardId }) {
     useEffect(() => {
         fetchBoardLayout(boardId)
             .then(data => {
-                console.log("Data from backend:", data);
                 setBoard(data);
                 setLoading(false);
             })
@@ -23,66 +22,87 @@ function BoardView({ boardId }) {
             });
     }, [boardId]);
 
-    // Transform monday.com data into AG Grid format
-    const { rowData, colDefs } = useMemo(() => {
-        if (!board || !board.columns) return { rowData: [], colDefs: [] };
+    // Transform monday.com data into multiple groups of AG Grid data
+    const { colDefs, groupedTables } = useMemo(() => {
+        if (!board || !board.columns) return { colDefs: [], groupedTables: [] };
 
-        // 1. Define Columns
+        // 1. Define Columns (Shared across all tables)
         const columns = [
-            { 
-                field: 'group', 
-                headerName: 'Group', 
-                width: 150,
-                // Keeps groups organized nicely
-                sort: 'asc' 
-            },
             { 
                 field: 'name', 
                 headerName: 'Item Name', 
-                pinned: 'left', // Pins the name to the left when scrolling horizontally
-                width: 250
+                pinned: 'left', 
+                width: 250,
+                cellStyle: {
+                    textAlign: "left"
+                },
+                flex: 1,
+                justifyContent: "center"
             }
         ];
 
-        // Dynamically add the rest of the monday.com columns
+        // Dynamically add the rest of the columns (omitting "link")
         board.columns.forEach(col => {
+            const lowerCaseTitle = col.title.toLowerCase();
+            const columnsToOmit = ["SharePoint Link", "SEND UPDT", "STATUS NOTES", "CREATION LOG", "RESOLVED DATE", "monday Doc v2",  "XREF TEXT", "DISPOSITION", "Main Item ID", "Item ID", "Name", "Group", "Subitems" ]
+            if (lowerCaseTitle.includes('link')) {
+                return; // Skip link columns
+            }
+            if (columnsToOmit.includes(col.title)){
+                return;
+            }
+
             columns.push({
-                field: col.id, // We use the unique column ID as the data key
+                field: col.id, 
                 headerName: col.title,
                 minWidth: 120,
-                flex: 1 // Allows columns to stretch and fill empty space
+                textAlign: "center"
+                
             });
         });
 
-        // 2. Define Rows (Flattening the nested groups/items)
-        const rows = [];
-        board.groups.forEach(group => {
-            group.items_page.items.forEach(item => {
-                // Base row object
-                const row = {
-                    id: item.id,
-                    group: group.title,
-                    name: item.name
-                };
+        // 2. Define Table Data Per Group
+        const groups = board.groups
+            // 🛑 BULLETPROOF FILTER: Check both title and ID for "subitem"
+            .filter(group => {
+                const titleMatch = group.title ? group.title.toLowerCase().includes('subitem') : false;
+                const idMatch = group.id ? group.id.toLowerCase().includes('subitem') : false;
+                
+                // Keep the group ONLY if it is NOT a subitem title and NOT a subitem ID
+                return !titleMatch && !idMatch;
+            })
+            .map(group => {
+                const rows = group.items_page.items.map(item => {
+                    const row = {
+                        id: item.id,
+                        name: item.name
+                    };
 
-                // Map dynamic column values to this row
-                item.column_values.forEach(colVal => {
-                    row[colVal.id] = colVal.text || '-'; // Fallback for empty cells
+                    item.column_values.forEach(colVal => {
+                        row[colVal.id] = colVal.text || '-'; 
+                    });
+
+                    return row;
                 });
 
-                rows.push(row);
+                return {
+                    id: group.id,
+                    title: group.title,
+                    rowData: rows
+                };
             });
-        });
 
-        return { rowData: rows, colDefs: columns };
+        return { colDefs: columns, groupedTables: groups };
     }, [board]);
 
-    // AG Grid default column settings (applies to all columns)
+    // AG Grid default column settings
     const defaultColDef = useMemo(() => {
         return {
             sortable: true,
             filter: true,
             resizable: true,
+            flex: 1,
+            cellStyle: { textAlign: 'left' }
         };
     }, []);
 
@@ -97,27 +117,42 @@ function BoardView({ boardId }) {
     }
 
     return (
-        <div style={{ padding: '20px', fontFamily: 'sans-serif', height: '100vh', display: 'flex', flexDirection: 'column' }}>
-            <h2 style={{ marginBottom: '15px' }}>{board.name}</h2>
+        <div style={{ padding: '20px', fontFamily: 'sans-serif' }}>
+            <h2 style={{ marginBottom: '25px', textAlign: 'center'}}>{board.name}</h2>
             
-            {/* 
-              AG Grid requires a wrapper div with a specific height and theme class. 
-              We use flex-grow to ensure it takes up the remainder of the screen.
-            */}
-            <div 
-                className="ag-theme-quartz" 
-                style={{ flexGrow: 1, width: '100%', minHeight: '500px' }}
-            >
-                <AgGridReact
-                    rowData={rowData}
-                    columnDefs={colDefs}
-                    defaultColDef={defaultColDef}
-                    rowSelection="single" // Allows clicking a row (useful for opening comments later)
-                    animateRows={true}
-                    pagination={true}
-                    paginationPageSize={20}
-                />
-            </div>
+            {/* Map through each group and create a separate table */}
+            {groupedTables.map(group => (
+                <div key={group.id} style={{ marginBottom: '40px', flex: 1, justifyContent: "center" }}>
+                    
+                    {/* Group Header */}
+                    <h3 style={{ 
+                        backgroundColor: '#eef2fc', 
+                        padding: '10px 15px', 
+                        borderRadius: '5px',
+                        color: '#323338',
+                        margin: '0 0 10px 0',
+                        fontSize: '18px',
+                        textAlign: "center"
+                    }}>
+                        {group.title}
+                    </h3>
+                    
+                    {/* AG Grid Instance for this specific group */}
+                    <div className="ag-theme-quartz" style={{ width: '100%', flex: 1, justifyContent: "start", textAlign: "left" }}>
+                        <AgGridReact
+                            rowData={group.rowData}
+                            columnDefs={colDefs}
+                            defaultColDef={defaultColDef}
+                            rowSelection="single"
+                            animateRows={true}
+                            // autoHeight prevents double-scrollbars by sizing the grid to its rows
+                            domLayout="autoHeight" 
+                            enableCellTextSelection={true}
+                        />
+                    </div>
+                    
+                </div>
+            ))}
         </div>
     );
 }
