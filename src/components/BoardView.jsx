@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { fetchBoardLayout } from '../api';
+import UpdatesModal from './UpdatesModal';
 
 function BoardView({ boardId }) {
     const [board, setBoard] = useState(null);
     const [loading, setLoading] = useState(true);
     
+    // Track expanded subitems
     const [expandedItems, setExpandedItems] = useState({});
     
-    // 🛑 NEW: Track column widths (Defaults: Item Name = 320px, Others = 140px)
+    // Track column widths (Defaults: Item Name = 320px, Others = 140px)
     const [colWidths, setColWidths] = useState({ item_name: 320 });
+
+    // Track which item's comments are currently open
+    const [activeUpdateItemId, setActiveUpdateItemId] = useState(null);
 
     useEffect(() => {
         setLoading(true);
@@ -32,7 +37,7 @@ function BoardView({ boardId }) {
         }));
     };
 
-    // 🛑 NEW: Handle Column Resizing
+    // Handle Column Resizing
     const handleResizeStart = (e, colId) => {
         e.preventDefault();
         const startX = e.pageX;
@@ -56,8 +61,21 @@ function BoardView({ boardId }) {
     if (loading) return <div className="p-8 text-slate-500 font-sans text-lg animate-pulse">Loading board data...</div>;
     if (!board) return <div className="p-8 text-red-500 font-sans text-lg">Failed to load board.</div>;
 
+    // 🛑 NEW: Filter out the redundant 'name' and 'subitems' columns
+    const visibleColumns = board.columns.filter(col => {
+        const titleLower = col.title.toLowerCase();
+        const idLower = col.id.toLowerCase();
+        return (
+            idLower !== 'name' && 
+            titleLower !== 'name' && 
+            idLower !== 'subitems' && 
+            titleLower !== 'subitems' &&
+            col.type !== 'subtasks'
+        );
+    });
+
     return (
-        <div className="flex flex-col h-full bg-white font-sans">
+        <div className="flex flex-col h-full bg-white font-sans relative">
             <h1 className="text-3xl font-bold text-slate-800 mb-8">{board.name}</h1>
 
             <div className="flex-1 overflow-auto pb-20">
@@ -77,7 +95,6 @@ function BoardView({ boardId }) {
 
                         {/* Table Wrapper */}
                         <div className="overflow-x-auto border border-slate-300 rounded-md shadow-sm">
-                            {/* We enforce table-fixed so our manual widths are strictly obeyed */}
                             <table className="text-left border-collapse whitespace-nowrap bg-white table-fixed">
                                 <thead>
                                     <tr>
@@ -99,8 +116,8 @@ function BoardView({ boardId }) {
                                             />
                                         </th>
                                         
-                                        {/* Dynamic Columns Headers */}
-                                        {board.columns.map(col => {
+                                        {/* 🛑 USING visibleColumns instead of board.columns */}
+                                        {visibleColumns.map(col => {
                                             const w = colWidths[col.id] || 140;
                                             return (
                                                 <th 
@@ -141,7 +158,7 @@ function BoardView({ boardId }) {
                                                             maxWidth: nameWidth
                                                         }}
                                                     >
-                                                        <div className="flex items-center gap-2 overflow-hidden">
+                                                        <div className="flex items-center gap-2 overflow-hidden w-full pr-2">
                                                             {hasSubitems ? (
                                                                 <button 
                                                                     onClick={() => toggleItem(item.id)} 
@@ -152,11 +169,24 @@ function BoardView({ boardId }) {
                                                             ) : (
                                                                 <span className="w-5 flex-shrink-0"></span> 
                                                             )}
+                                                            
                                                             <span className="truncate font-medium">{item.name}</span>
+                                                            
+                                                            {/* Comments Button */}
+                                                            <button 
+                                                                onClick={() => setActiveUpdateItemId(item.id)}
+                                                                className="ml-auto flex-shrink-0 text-slate-300 hover:text-blue-500 transition-colors"
+                                                                title="View Updates"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                                                                </svg>
+                                                            </button>
                                                         </div>
                                                     </td>
                                                     
-                                                    {board.columns.map(col => {
+                                                    {/* 🛑 USING visibleColumns */}
+                                                    {visibleColumns.map(col => {
                                                         const cellData = item.column_values.find(c => c.id === col.id);
                                                         const w = colWidths[col.id] || 140;
                                                         return (
@@ -183,13 +213,25 @@ function BoardView({ boardId }) {
                                                                 maxWidth: nameWidth
                                                             }}
                                                         >
-                                                            <div className="flex items-center gap-2 pl-8 overflow-hidden">
+                                                            <div className="flex items-center gap-2 pl-8 overflow-hidden w-full pr-2">
                                                                 <span className="text-slate-300 text-lg leading-none flex-shrink-0">↳</span>
                                                                 <span className="truncate">{subitem.name}</span>
+                                                                
+                                                                {/* Comments Button for Subitems */}
+                                                                <button 
+                                                                    onClick={() => setActiveUpdateItemId(subitem.id)}
+                                                                    className="ml-auto flex-shrink-0 text-slate-300 hover:text-blue-500 transition-colors"
+                                                                    title="View Updates"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                                                                    </svg>
+                                                                </button>
                                                             </div>
                                                         </td>
                                                         
-                                                        {board.columns.map(col => {
+                                                        {/* 🛑 USING visibleColumns */}
+                                                        {visibleColumns.map(col => {
                                                             const cellData = subitem.column_values.find(c => c.id === col.id);
                                                             const w = colWidths[col.id] || 140;
                                                             return (
@@ -214,6 +256,12 @@ function BoardView({ boardId }) {
                     </div>
                 ))}
             </div>
+
+            {/* Render the Comments Modal if an item is selected */}
+            <UpdatesModal 
+                itemId={activeUpdateItemId} 
+                onClose={() => setActiveUpdateItemId(null)} 
+            />
         </div>
     );
 }

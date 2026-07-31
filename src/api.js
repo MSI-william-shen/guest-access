@@ -85,3 +85,37 @@ export const fetchBoardLayout = async (boardId) => {
     
     return response.data.boards[0];
 };
+
+// 🛑 NEW: Fetch Updates and Replies for a specific Item
+export const fetchItemUpdates = async (itemId) => {
+    const query = `
+        query getItemUpdates($itemId: [ID!]) {
+            items(ids: $itemId) {
+                name
+                updates {
+                    id
+                    body
+                    created_at
+                    creator {
+                        name
+                        photo_thumb
+                    }
+                    replies {
+                        id
+                        body
+                        created_at
+                        creator {
+                            name
+                            photo_thumb
+                        }
+                    }
+                }
+            }
+        }
+    `;
+    
+    const response = await monday.api(query, { variables: { itemId: [itemId] } });
+    if (response.errors) throw new Error(response.errors[0].message);
+    
+    return response.data.items[0];
+};
